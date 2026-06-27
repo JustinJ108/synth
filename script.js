@@ -1,16 +1,47 @@
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const gainNode = audioCtx.createGain();
-gainNode.connect(audioCtx.destination);
-gainNode.gain.value = 0.5;
 
-const volumeSlider = document.getElementById('volume');
+// Master gain
+const masterGain = audioCtx.createGain();
+masterGain.connect(audioCtx.destination);
+masterGain.gain.value = 0.5;
+
+// LFO
+const lfo = audioCtx.createOscillator();
+const lfoDepthNode = audioCtx.createGain();
+lfo.type = 'sine';
+lfo.frequency.value = 4;
+lfoDepthNode.gain.value = 0;
+lfo.connect(lfoDepthNode);
+lfo.start();
+
+const volumeSlider  = document.getElementById('volume');
 const waveformSelect = document.getElementById('waveform');
+const lfoRateSlider  = document.getElementById('lfo-rate');
+const lfoDepthSlider = document.getElementById('lfo-depth');
+const lfoTargetSelect = document.getElementById('lfo-target');
+const lfoRateDisplay  = document.getElementById('lfo-rate-display');
+const lfoDepthDisplay = document.getElementById('lfo-depth-display');
 
 volumeSlider.addEventListener('input', () => {
-  gainNode.gain.value = parseFloat(volumeSlider.value);
+  masterGain.gain.value = parseFloat(volumeSlider.value);
 });
 
-// Notes: two octaves starting at C3
+lfoRateSlider.addEventListener('input', () => {
+  const val = parseFloat(lfoRateSlider.value);
+  lfo.frequency.value = val;
+  lfoRateDisplay.textContent = val.toFixed(1) + ' Hz';
+});
+
+lfoDepthSlider.addEventListener('input', () => {
+  const val = parseFloat(lfoDepthSlider.value);
+  lfoDepthDisplay.textContent = val;
+  applyLfoToActive();
+});
+
+lfoTargetSelect.addEventListener('change', () => {
+  rewireAllLfo();
+});
+
 const notes = [
   { note: 'C3',  freq: 130.81, type: 'white', key: 'a' },
   { note: 'C#3', freq: 138.59, type: 'black', key: 'w' },
@@ -31,24 +62,66 @@ const notes = [
   { note: 'E4',  freq: 329.63, type: 'white', key: ';' },
 ];
 
-const activeOscillators = {};
+// Gain multiplier per waveform — sine sounds quieter, boost it
+const waveformGain = { sine: 1.8, square: 0.7, sawtooth: 0.8, triangle: 1.0 };
+
+const activeNodes = {}; // id -> { osc, noteGain }
+
+function getLfoDepth() {
+  return parseFloat(lfoDepthSlider.value);
+}
+
+function connectLfo(osc, noteGain) {
+  const target = lfoTargetSelect.value;
+  const depth = getLfoDepth();
+  lfoDepthNode.gain.value = depth;
+  if (target === 'pitch') {
+    lfoDepthNode.connect(osc.frequency);
+  } else {
+    lfoDepthNode.connect(noteGain.gain);
+  }
+}
+
+function applyLfoToActive() {
+  lfoDepthNode.gain.value = getLfoDepth();
+}
+
+function rewireAllLfo() {
+  // Disconnect and reconnect for all active notes
+  try { lfoDepthNode.disconnect(); } catch(e) {}
+  Object.values(activeNodes).forEach(({ osc, noteGain }) => {
+    connectLfo(osc, noteGain);
+  });
+}
 
 function startNote(freq, id) {
-  if (activeOscillators[id]) return;
+  if (activeNodes[id]) return;
   audioCtx.resume();
+
+  const waveform = waveformSelect.value;
   const osc = audioCtx.createOscillator();
-  osc.type = waveformSelect.value;
+  osc.type = waveform;
   osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-  osc.connect(gainNode);
+
+  const noteGain = audioCtx.createGain();
+  noteGain.gain.value = waveformGain[waveform] || 1.0;
+
+  osc.connect(noteGain);
+  noteGain.connect(masterGain);
   osc.start();
-  activeOscillators[id] = osc;
+
+  activeNodes[id] = { osc, noteGain };
+  connectLfo(osc, noteGain);
 }
 
 function stopNote(id) {
-  const osc = activeOscillators[id];
-  if (!osc) return;
-  osc.stop();
-  delete activeOscillators[id];
+  const nodes = activeNodes[id];
+  if (!nodes) return;
+  nodes.osc.stop();
+  delete activeNodes[id];
+  // Reconnect LFO to remaining active nodes
+  try { lfoDepthNode.disconnect(); } catch(e) {}
+  Object.values(activeNodes).forEach(({ osc, noteGain }) => connectLfo(osc, noteGain));
 }
 
 // Build keyboard
@@ -70,7 +143,6 @@ notes.forEach(({ note, freq, type, key }) => {
   keyboard.appendChild(el);
 });
 
-// Keyboard input
 const keyMap = {};
 notes.forEach(({ note, freq, key }) => { keyMap[key] = { freq, note }; });
 
