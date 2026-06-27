@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Synth</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="synth">
+    <h1>Synth</h1>
+
+    <div class="controls">
+      <label>
+        Waveform
+        <select id="waveform">
+          <option value="sine">Sine</option>
+          <option value="square">Square</option>
+          <option value="sawtooth">Sawtooth</option>
+          <option value="triangle">Triangle</option>
+        </select>
+      </label>
+
+      <label>
+        Volume
+        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.5" />
+      </label>
+    </div>
+
+    <div class="keyboard" id="keyboard"></div>
+
+    <div class="hint">Click keys or use keyboard: A S D F G H J K L ; (white) W E T Y U O P (black)</div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
